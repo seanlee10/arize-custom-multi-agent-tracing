@@ -79,3 +79,13 @@ async def test_invoke_returns_502_with_trace_id_when_decision_agent_fails(export
     assert detail["trace_id"] == format(root.context.trace_id, "032x")
     assert root.status.status_code is StatusCode.ERROR
     assert only_span(exporter, "invoke_decision_agent").status.status_code is StatusCode.ERROR
+
+
+async def test_502_reports_the_underlying_error_not_an_exception_group(exporter):
+    # The MCP client runs inside an anyio task group, which wraps errors in ExceptionGroup.
+    response = await post(make_app(FakeAnthropic([]), decision_ok), {"ticker": "AAPL"})
+    assert response.status_code == 502
+    error = response.json()["detail"]["error"]
+    assert "ran out of scripted responses" in error
+    assert "ExceptionGroup" not in error
+    assert "ExceptionGroup" not in only_span(exporter, "research_agent").status.description

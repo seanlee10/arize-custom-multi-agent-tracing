@@ -513,6 +513,7 @@ source = { virtual = "." }
 dev = [
     { name = "decision-agent" },
     { name = "fin-tracing" },
+    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "research-agent" },
@@ -525,6 +526,7 @@ dev = [
 dev = [
     { name = "decision-agent", editable = "services/decision_agent" },
     { name = "fin-tracing", editable = "common/fin_tracing" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "research-agent", editable = "services/research_agent" },

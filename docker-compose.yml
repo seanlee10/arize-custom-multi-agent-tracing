@@ -1,0 +1,19 @@
+services:
+  websearch-mcp:
+    build: { context: ., dockerfile: services/websearch_mcp/Dockerfile }
+    env_file: .env
+    ports: ["8000:8000"]
+
+  decision-agent:
+    build: { context: ., dockerfile: services/decision_agent/Dockerfile }
+    env_file: .env
+    ports: ["8002:8002"]
+
+  research-agent:
+    build: { context: ., dockerfile: services/research_agent/Dockerfile }
+    env_file: .env
+    environment:
+      WEBSEARCH_MCP_URL: http://websearch-mcp:8000/mcp
+      DECISION_AGENT_URL: http://decision-agent:8002
+    ports: ["8001:8001"]
+    depends_on: [websearch-mcp, decision-agent]

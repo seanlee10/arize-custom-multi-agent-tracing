@@ -42,6 +42,13 @@ class AnalysisError(RuntimeError):
         self.trace_id = trace_id
 
 
+def _root_cause(exc: BaseException) -> BaseException:
+    """The MCP client runs in an anyio task group, which wraps errors in ExceptionGroup."""
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    return exc
+
+
 async def _call_mcp_tool(web_search: WebSearchClient, block: Any) -> dict[str, Any]:
     result: dict[str, Any] = {"type": "tool_result", "tool_use_id": block.id}
     try:
@@ -86,7 +93,8 @@ async def analyze_ticker(ticker: str, deps: ResearchDeps) -> dict[str, Any]:
                 deps.decision_url, ticker=ticker, research_brief=brief, transport=deps.decision_transport
             )
         except Exception as exc:
-            raise AnalysisError(f"{type(exc).__name__}: {exc}", span.trace_id) from exc
+            cause = _root_cause(exc)
+            raise AnalysisError(f"{type(cause).__name__}: {cause}", span.trace_id) from cause
         result = {
             "ticker": ticker,
             "decision": decision["decision"],
