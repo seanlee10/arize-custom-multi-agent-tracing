@@ -45,3 +45,14 @@ async def test_search_failure_returns_mcp_error_and_error_span(exporter):
     span = only_span(exporter, "web_search")
     assert span.status.status_code is StatusCode.ERROR
     assert "tavily down" in span.status.description
+
+
+async def test_span_records_the_schema_the_server_publishes(exporter):
+    async with Client(create_server(fake_search)) as client:
+        [tool] = (await client.list_tools()).tools
+        await client.call_tool("web_search", {"query": "x"})
+
+    properties = tool.input_schema["properties"]
+    assert properties["query"]["description"] == "Search query"
+    assert (properties["max_results"]["minimum"], properties["max_results"]["maximum"]) == (1, 10)
+    assert json.loads(only_span(exporter, "web_search").attributes["tool.parameters"]) == tool.input_schema

@@ -3,8 +3,10 @@
 import json
 import os
 from collections.abc import Awaitable, Callable
+from typing import Annotated, Any
 
 from mcp.server.mcpserver import Context, MCPServer
+from pydantic import Field
 
 from fin_tracing import continue_request_context, setup_tracing, tool_span
 
@@ -14,33 +16,34 @@ WEB_SEARCH_DESCRIPTION = (
     "Search the web for recent financial news, earnings, analyst opinions and other information "
     "about a company or stock. Returns a JSON list of {title, url, content} results."
 )
-WEB_SEARCH_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "query": {"type": "string", "description": "Search query"},
-        "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
-    },
-    "required": ["query"],
-}
 MAX_CONTENT_CHARS = 1500
 
 
 def create_server(search: SearchFn) -> MCPServer:
     server = MCPServer("websearch")
+    published_schema: dict[str, Any] = {}
 
     @server.tool(name="web_search", description=WEB_SEARCH_DESCRIPTION)
-    async def web_search(query: str, ctx: Context, max_results: int = 5) -> str:
+    async def web_search(
+        query: Annotated[str, Field(description="Search query")],
+        ctx: Context,
+        max_results: Annotated[int, Field(ge=1, le=10)] = 5,
+    ) -> str:
+        if not published_schema:
+            # Trace the schema exactly as clients (and Claude) see it in tools/list.
+            [tool] = [t for t in await server.list_tools() if t.name == "web_search"]
+            published_schema.update(tool.input_schema)
         arguments = {"query": query, "max_results": max_results}
         # The caller put traceparent + baggage into the request's _meta.
         with continue_request_context(ctx.request_context.meta or {}):
             with tool_span(
                 "web_search",
                 description=WEB_SEARCH_DESCRIPTION,
-                parameters_schema=WEB_SEARCH_SCHEMA,
+                parameters_schema=published_schema,
                 arguments=arguments,
             ) as span:
                 span.set_attributes({"finagent.mcp.side": "server"})
-                results = await search(query, max(1, min(max_results, 10)))
+                results = await search(query, max_results)
                 span.set_attributes({"finagent.search.result_count": len(results)})
                 span.set_output(results)
                 return json.dumps(results)
