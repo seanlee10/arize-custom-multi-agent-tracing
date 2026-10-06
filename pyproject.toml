@@ -7,6 +7,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "fin-tracing",
+    "websearch-mcp",
     "pytest>=8",
     "pytest-asyncio>=0.24",
 ]
@@ -15,10 +16,11 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["common/fin_tracing"]
+members = ["common/fin_tracing", "services/websearch_mcp"]
 
 [tool.uv.sources]
 fin-tracing = { workspace = true }
+websearch-mcp = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
