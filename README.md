@@ -16,12 +16,30 @@ client ─POST /invoke─► research-agent ──MCP (traceparent+baggage in _m
 
 ```bash
 cp .env.example .env        # fill in ANTHROPIC_API_KEY, TAVILY_API_KEY, ARIZE_SPACE_ID, ARIZE_API_KEY
-docker compose up --build
+docker compose up --build   # or `docker-compose up --build` with the standalone Compose v1 binary
 uv run scripts/analyze.py AAPL
 ```
 
-The response includes a `trace_id`; search for it in your Arize project (`ARIZE_PROJECT_NAME`).
-Without Arize keys, spans are printed to each container's logs.
+The response includes a `trace_id`; search for it in your Arize project (`ARIZE_PROJECT_NAME`,
+default `financial-multi-agent`). Without Arize keys, spans are printed to each container's logs.
+
+Every run makes real, billed Claude and Tavily calls (an analysis takes roughly a minute).
+
+More runs and housekeeping:
+
+```bash
+uv run scripts/analyze.py MSFT --session demo-1   # same --session groups runs into one Arize session
+uv run scripts/analyze.py NVDA --url http://localhost:8001
+docker compose logs -f research-agent             # follow one service
+docker compose down                               # stop everything
+```
+
+### Apple Silicon (M4) + Colima note
+
+The research-agent and websearch-mcp images set `OPENSSL_armcap=0`. Without it, those containers
+exit immediately with code 132 (SIGILL) on Apple M4 hosts running a VM such as Colima: OpenSSL,
+loaded via `cryptography` (a dependency of `mcp`), probes ARM SME/SVE2 CPU features the VM exposes
+but cannot execute. The setting only disables that probing and has no practical cost here.
 
 ## What to look for in Arize
 
