@@ -9,6 +9,7 @@ dev = [
     "fin-tracing",
     "websearch-mcp",
     "decision-agent",
+    "research-agent",
     "pytest>=8",
     "pytest-asyncio>=0.24",
 ]
@@ -17,12 +18,13 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["common/fin_tracing", "services/websearch_mcp", "services/decision_agent"]
+members = ["common/fin_tracing", "services/websearch_mcp", "services/decision_agent", "services/research_agent"]
 
 [tool.uv.sources]
 fin-tracing = { workspace = true }
 websearch-mcp = { workspace = true }
 decision-agent = { workspace = true }
+research-agent = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
