@@ -50,6 +50,71 @@ Two things break the single trace in practice, and this repo handles both:
   provider exists, and those can become the trace root. This sample records only its own spans
   (`FinTracingOnlyProvider`); see the Code map below.
 
+## How one agent hands context to the next
+
+This is the research agent calling the decision agent over HTTP, in four steps.
+
+**1. The research agent puts request values into baggage when a request arrives**
+([`propagation.py`](common/fin_tracing/src/fin_tracing/propagation.py), `request_context`):
+
+```python
+ctx = otel_context.get_current()
+for key, value in ((SESSION_KEY, session_id), (USER_KEY, user_id),
+                   (REQUEST_KEY, request_id), (TICKER_KEY, ticker)):
+    ctx = baggage.set_baggage(key, value, context=ctx)   # travels to other services
+token = otel_context.attach(ctx)
+with using_attributes(session_id=..., user_id=..., metadata=..., tags=...):  # this process only
+    ...
+```
+
+**2. The sender adds its current context as HTTP headers**
+([`decision_client.py`](services/research_agent/src/research_agent/decision_client.py)):
+
+```python
+with chain_span("invoke_decision_agent", input=payload):
+    response = await http.post("/invoke", json=payload, headers=inject_carrier())
+```
+
+`inject_carrier()` is a single OpenTelemetry call, `propagate.inject(carrier)`. It runs inside the
+`invoke_decision_agent` span, so the request carries two headers like these:
+
+```
+traceparent: 00-13e30e30d164cae909dfa828a9d61575-<invoke_decision_agent span id>-01
+baggage:     finagent.session_id=demo-session-1,finagent.user_id=demo-user,finagent.request_id=...,finagent.ticker=AAPL
+```
+
+**3. The receiver continues from those headers**
+([`decision_agent/app.py`](services/decision_agent/src/decision_agent/app.py)):
+
+```python
+async def invoke(body: DecideRequest, request: Request):
+    with continue_request_context(request.headers, ticker=body.ticker):
+        return await run_decision_agent(...)
+```
+
+**4. `continue_request_context` rebuilds the caller's context**
+([`propagation.py`](common/fin_tracing/src/fin_tracing/propagation.py)):
+
+```python
+token = otel_context.attach(propagate.extract(carrier))   # adopt the caller's trace + parent span
+with request_context(
+    session_id=str(baggage.get_baggage(SESSION_KEY) or uuid.uuid4()),
+    user_id=str(baggage.get_baggage(USER_KEY) or "anonymous"),
+    ...
+):                                                        # rebuild session/user/metadata/tags
+    ...
+```
+
+The first span the decision agent creates, `decision_agent`, gets the same `trace_id`. Its parent
+is `invoke_decision_agent` in the other container, and it carries `session.id = demo-session-1`.
+That's the link in the trace tree above.
+
+The MCP hop works the same way, but the carrier is the request's `_meta` field instead of headers:
+`meta=inject_carrier()` in
+[`mcp_client.py`](services/research_agent/src/research_agent/mcp_client.py) sends it, and
+`continue_request_context(ctx.request_context.meta)` in
+[`server.py`](services/websearch_mcp/src/websearch_mcp/server.py) receives it.
+
 ## Run
 
 ```bash
