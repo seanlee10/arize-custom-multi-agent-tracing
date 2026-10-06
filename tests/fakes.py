@@ -50,3 +50,20 @@ class FakeAnthropic:
         if not self._responses:
             raise AssertionError("FakeAnthropic ran out of scripted responses")
         return self._responses.pop(0)
+
+
+def fake_local_tool(name: str, result: dict[str, Any], *, error: Exception | None = None):
+    from decision_agent.tools import LocalTool
+
+    def run(**kwargs: Any) -> dict[str, Any]:
+        if error is not None:
+            raise error
+        return {**result, "args": kwargs}
+
+    return LocalTool(
+        name=name,
+        description=f"fake {name}",
+        input_schema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]},
+        run=run,
+        span_attributes=lambda r: {f"finagent.fake.{name}": "ran"},
+    )
