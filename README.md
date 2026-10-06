@@ -41,14 +41,42 @@ by doing the same three things:
 2. Create its spans as children of that context, with the OpenInference attributes.
 3. Export them over OTLP to the same Arize project.
 
-Two things break the single trace in practice, and this repo handles both:
-- **Request attributes are lost at the boundary.** OpenInference's `using_attributes` (session,
-  user, metadata, tags) lives only in the current process, and `traceparent` doesn't carry it. This
-  sample also sends those values as W3C baggage, and each receiver rebuilds them
-  (`fin_tracing/propagation.py`).
-- **Library spans take over the tree.** FastAPI and the MCP SDK emit their own spans once a tracer
-  provider exists, and those can become the trace root. This sample records only its own spans
-  (`FinTracingOnlyProvider`); see the Code map below.
+### Two pitfalls we hit, and how the sample handles them
+
+**1. Session and user IDs don't cross service boundaries on their own.**
+`traceparent` carries only the trace ID, the caller's span ID and a sampling flag. That's enough to
+keep every span in one trace under the right parent. Session ID, user ID, metadata and tags are a
+different matter: OpenInference sets them with `using_attributes(...)`, which keeps them in each
+process's memory, and nothing sends them over the network.
+
+Without a fix, the research agent's spans carry `session.id`, but the decision agent's and the MCP
+server's spans don't. They still appear in the right trace, but Arize's Sessions view, filtering by
+user, and session-level evals see only part of the run.
+
+The sample also sends these values as W3C Baggage. Each receiving service reads the baggage and
+calls `using_attributes` again with the same values, and the span helper copies them onto every
+span (`continue_request_context` in
+[`propagation.py`](common/fin_tracing/src/fin_tracing/propagation.py)). As a result, every span in
+the trace carries the same session.
+
+**2. Framework spans can take over the trace.**
+Recent versions of FastAPI and the MCP Python SDK have OpenTelemetry built in. Once a tracer
+provider is configured, they emit their own spans with no instrumentation package installed. In
+this sample, an HTTP span (`POST /invoke`) became the trace root, with `fastapi.endpoint` below it
+and `research_agent` only third. MCP added `tools/list`, `tools/call` and `server/discover` spans.
+
+The root span is what represents the trace in Arize, so this matters:
+- The traces table shows the root's input and output. An HTTP span has neither in OpenInference
+  terms, so rows look empty.
+- The root has no OpenInference span kind (AGENT, LLM, TOOL), so agent views lose their starting
+  point.
+- The extra plumbing spans clutter the tree.
+
+The sample records only its own spans (`FinTracingOnlyProvider` in
+[`provider.py`](common/fin_tracing/src/fin_tracing/provider.py)). Every other library gets a no-op
+tracer that records nothing but passes the parent context through, so parent links stay intact and
+`research_agent` is the root. This is a choice, not a rule: a team that wants the framework spans
+for latency debugging can keep them, as long as they know the trace root changes.
 
 ## How one agent hands context to the next
 
