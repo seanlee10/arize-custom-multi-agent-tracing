@@ -1,3 +1,5 @@
+name: multi-agent-tracing
+
 services:
   websearch-mcp:
     build: { context: ., dockerfile: services/websearch_mcp/Dockerfile }

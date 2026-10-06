@@ -16,7 +16,7 @@ client ─POST /invoke─► research-agent ──MCP (traceparent+baggage in _m
 
 ```bash
 cp .env.example .env        # fill in ANTHROPIC_API_KEY, TAVILY_API_KEY, ARIZE_SPACE_ID, ARIZE_API_KEY
-docker compose up --build   # or `docker-compose up --build` with the standalone Compose v1 binary
+docker compose up --build   # or `docker-compose up --build` if Compose is a standalone binary
 uv run scripts/analyze.py AAPL
 ```
 
@@ -49,6 +49,15 @@ but cannot execute. The setting only disables that probing and has no practical 
   even across containers — baggage carries them and each service rebuilds `using_attributes`.
 - LLM spans: input/output messages including tool calls, token counts, prompt template + version.
 - Filter on `finagent.decision`, `finagent.bollinger.signal`, `finagent.force_index.trend`, ...
+
+One AAPL run: the research agent's four `web_search` calls each contain the MCP server's own span,
+and the decision agent (from a different container) sits under `invoke_decision_agent`.
+
+![Trace tree for one run in Arize](images/arize-trace.png)
+
+Arize's Agent Graph built from the same spans:
+
+![Agent graph in Arize](images/arize-agent-graph.png)
 
 ## Code map
 
