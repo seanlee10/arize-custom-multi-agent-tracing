@@ -1,7 +1,14 @@
 # Multi-agent financial analysis with manual Arize tracing
 
-Three containers turn a ticker into a **buy / hold / sell** decision. Every span is written by hand
-with OpenInference semantic conventions and exported to Arize AX as **one connected trace**.
+**If context is propagated correctly, spans reported separately by many services become one trace,
+whatever language or framework each service uses.**
+
+In this sample, three containers turn a ticker into a **buy / hold / sell** decision. No collector
+or shared process stitches their spans together. Each container exports its own spans straight to
+Arize AX, and Arize assembles them into one trace from two IDs on every span: `trace_id` and
+`parent_id`.
+
+![One trace assembled from three containers](images/arize-trace.png)
 
 ```
 client ─POST /invoke─► research-agent ──MCP (traceparent+baggage in _meta)──► websearch-mcp ─► Tavily
@@ -11,6 +18,37 @@ client ─POST /invoke─► research-agent ──MCP (traceparent+baggage in _m
                                                                               ├─ bollinger_bands
                                                                               └─ insider_trades (yfinance)
 ```
+
+## Why it works: the contract between services
+
+At every hop, the caller sends its current context and the callee continues from it. That
+contract is made of open standards, not anything specific to Python, these frameworks, or Arize:
+
+| What crosses the boundary | Standard | What it gives you |
+|---|---|---|
+| `traceparent` | [W3C Trace Context](https://www.w3.org/TR/trace-context/) | Same `trace_id`; the callee's span is parented to the caller's span |
+| `baggage` | [W3C Baggage](https://www.w3.org/TR/baggage/) | Request-level values (`session.id`, `user.id`, ticker) that every service copies onto its spans |
+| Span data | [OTLP](https://opentelemetry.io/docs/specs/otlp/) + [OpenInference](https://github.com/Arize-ai/openinference) attributes | Any SDK can export spans, and Arize renders them as AGENT / LLM / TOOL spans |
+| Resource attribute `openinference.project.name` | OpenInference | All services report into the same Arize project |
+
+The carrier can be anything that reaches the other side. Here it's HTTP headers for the
+agent-to-agent call, and the request's `_meta` field for MCP, which has no per-call headers.
+
+Every service in this repo happens to be Python and the agents use no framework. A service in
+TypeScript, Java or Go, or one built on LangGraph or another agent framework, joins the same trace
+by doing the same three things:
+1. Read `traceparent` and `baggage` from the incoming request.
+2. Create its spans as children of that context, with the OpenInference attributes.
+3. Export them over OTLP to the same Arize project.
+
+Two things break the single trace in practice, and this repo handles both:
+- **Request attributes are lost at the boundary.** OpenInference's `using_attributes` (session,
+  user, metadata, tags) lives only in the current process, and `traceparent` doesn't carry it. This
+  sample also sends those values as W3C baggage, and each receiver rebuilds them
+  (`fin_tracing/propagation.py`).
+- **Library spans take over the tree.** FastAPI and the MCP SDK emit their own spans once a tracer
+  provider exists, and those can become the trace root. This sample records only its own spans
+  (`FinTracingOnlyProvider`); see the Code map below.
 
 ## Run
 
@@ -50,12 +88,9 @@ but cannot execute. The setting only disables that probing and has no practical 
 - LLM spans: input/output messages including tool calls, token counts, prompt template + version.
 - Filter on `finagent.decision`, `finagent.bollinger.signal`, `finagent.force_index.trend`, ...
 
-One AAPL run: the research agent's four `web_search` calls each contain the MCP server's own span,
-and the decision agent (from a different container) sits under `invoke_decision_agent`.
-
-![Trace tree for one run in Arize](images/arize-trace.png)
-
-Arize's Agent Graph built from the same spans:
+In the trace at the top (one AAPL run), each of the research agent's four `web_search` calls
+contains the MCP server's own span, and the decision agent, from a different container, sits under
+`invoke_decision_agent`. Arize also builds an Agent Graph from the same spans:
 
 ![Agent graph in Arize](images/arize-agent-graph.png)
 
