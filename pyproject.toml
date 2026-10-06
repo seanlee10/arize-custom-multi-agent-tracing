@@ -1,0 +1,25 @@
+[project]
+name = "financial-multi-agent"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "fin-tracing",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["common/fin_tracing"]
+
+[tool.uv.sources]
+fin-tracing = { workspace = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
