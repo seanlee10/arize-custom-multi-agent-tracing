@@ -15,10 +15,27 @@ from opentelemetry.sdk.trace.export import (
     SimpleSpanProcessor,
     SpanExporter,
 )
+from opentelemetry.trace import NoOpTracer, Tracer
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+from fin_tracing.spans import TRACER_NAME
 
 DEFAULT_PROJECT_NAME = "financial-multi-agent"
 DEFAULT_OTLP_ENDPOINT = "https://otlp.arize.com/v1"
+
+
+class FinTracingOnlyProvider(TracerProvider):
+    """Records only spans created by fin_tracing.
+
+    Libraries such as FastAPI and the MCP SDK emit their own OpenTelemetry spans as soon as a
+    global provider exists. This sample is manual-only, so every other tracer gets a NoOpTracer:
+    it records nothing but passes the parent context through, so our spans stay linked.
+    """
+
+    def get_tracer(self, instrumenting_module_name: str, *args, **kwargs) -> Tracer:
+        if instrumenting_module_name != TRACER_NAME:
+            return NoOpTracer()
+        return super().get_tracer(instrumenting_module_name, *args, **kwargs)
 
 
 def build_tracer_provider(
@@ -35,7 +52,7 @@ def build_tracer_provider(
             "service.name": service_name,
         }
     )
-    provider = TracerProvider(resource=resource)
+    provider = FinTracingOnlyProvider(resource=resource)
     processor = BatchSpanProcessor(exporter) if batch else SimpleSpanProcessor(exporter)
     provider.add_span_processor(processor)
     return provider

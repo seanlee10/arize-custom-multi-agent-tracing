@@ -23,3 +23,20 @@ def test_provider_resource_carries_project_and_service(monkeypatch):
     attrs = provider.resource.attributes
     assert attrs["openinference.project.name"] == "my-project"
     assert attrs["service.name"] == "decision-agent"
+
+
+def test_library_tracers_are_silenced_but_keep_parentage(exporter):
+    from opentelemetry import trace
+
+    from fin_tracing.spans import chain_span
+    from tests.helpers import only_span
+
+    library = trace.get_tracer("fastapi")  # FastAPI / MCP SDK emit their own spans
+    with library.start_as_current_span("POST /invoke"):
+        with chain_span("outer", input="x"):
+            with library.start_as_current_span("tools/call"):
+                with chain_span("inner", input="y"):
+                    pass
+    assert [s.name for s in exporter.get_finished_spans()] == ["inner", "outer"]
+    assert only_span(exporter, "outer").parent is None
+    assert only_span(exporter, "inner").parent.span_id == only_span(exporter, "outer").context.span_id
